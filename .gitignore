@@ -1,0 +1,29 @@
+# Environment
+.env
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project specific
+embeddings/
+data/faq_docs/*.txt
+*.zip
+files.zip
+
+# OS
+.DS_Store
+Thumbs.db
