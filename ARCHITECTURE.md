@@ -4,7 +4,10 @@
 
 This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-based semantic search with a local Large Language Model (LLM) to provide intelligent question-answering over FAQ documents.
 
-**Key Feature:** All processing happens locally - no external API calls required.
+**Key Features:**
+- All processing happens locally - no external API calls required
+- Self-correcting RAG with LangGraph quality checks
+- Chain-of-thought reasoning for better accuracy
 
 ---
 
@@ -20,8 +23,8 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
 │   │             │    │                 │    │   Events)               │  │
 │   └─────────────┘    └─────────────────┘    └──────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ▼ HTTP/JSON
+                                       │
+                                       ▼ HTTP/JSON
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           FLASK BACKEND (app.py)                            │
 │                                                                             │
@@ -32,31 +35,29 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
 │   │   POST /api/chat            → Main Q&A endpoint                      │  │
 │   │   POST /api/upload          → Upload FAQ files                        │  │
 │   │   POST /api/ingest/folder   → Ingest all .txt files                  │  │
-│   │   POST /api/clear           → Clear FAISS index                      │  │
+│   │   POST /api/clear           → Clear FAISS index                       │  │
 │   └─────────────────────────────────────────────────────────────────────┘  │
 │                                      │                                      │
 │                                      ▼                                      │
 │   ┌─────────────────────────────────────────────────────────────────────┐  │
-│   │                     CHAT ENDPOINT FLOW                             │  │
+│   │               CHAT ENDPOINT FLOW (with Self-Correction)             │  │
 │   │                                                                     │  │
-│   │   1. Receive user query                                             │  │
-│   │   2. Retrieve relevant chunks from FAISS                            │  │
-│   │   3. Build prompt with context                                      │  │
-│   │   4. Generate response via local LLM                                │  │
-│   │   5. Stream response to client (SSE)                                 │  │
+│   │   1. Classify query (simple vs complex)                            │  │
+│   │   2. Simple → Return greeting (fast path)                          │  │
+│   │   3. Complex → GraphRAG.query() → LangGraph self-correcting flow   │  │
 │   └─────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
-                                      │
-                    ┌─────────────────┴─────────────────┐
-                    ▼                                   ▼
+                                       │
+                     ┌─────────────────┴─────────────────┐
+                     ▼                                   ▼
 ┌─────────────────────────────┐       ┌─────────────────────────────────────┐
 │      RAG ENGINE             │       │      LOCAL LLM                      │
 │      (rag_engine.py)        │       │      (distilgpt2)                   │
-│                             │       │                                     │
+│                            │       │                                     │
 │  ┌───────────────────────┐ │       │  • 82MB model                       │
-│  │  SentenceTransformer   │ │       │  • CPU inference                     │
-│  │  (all-MiniLM-L6-v2)    │ │       │  • Text generation                  │
-│  │                       │ │       │  • No API calls                      │
+│  │  SentenceTransformer   │ │       │  • CPU inference                   │
+│  │  (all-MiniLM-L6-v2)    │ │       │  • Text generation                 │
+│  │                       │ │       │  • No API calls                     │
 │  │  • Embeddings: 384dim │ │       │                                     │
 │  │  • Semantic search     │ │       └─────────────────────────────────────┘
 │  └───────────────────────┘ │
@@ -68,7 +69,7 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
 │  │                       │ │
 │  │  • Fast similarity    │ │
 │  │    search             │ │
-│  │  • Stores 30 chunks   │ │
+│  │  • Stores chunks       │ │
 │  └───────────────────────┘ │
 │            │               │
 │            ▼               │
@@ -77,15 +78,35 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
 │  │  (Metadata + Text)    │ │
 │  └───────────────────────┘ │
 └─────────────────────────────┘
-                    │
-                    ▼
+                     │
+                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                         DATA LAYER                                          │
+│                      LANGRAPH SELF-CORRECTION LAYER                         │
+│                      (graph_rag.py)                                         │
+│                                                                             │
+│   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌───────────┐  │
+│   │  Retrieve   │───▶│  Generate   │───▶│  Quality    │───▶│  Done?    │  │
+│   │  (FAISS)    │    │  (LLM)      │    │  Check      │    │           │  │
+│   └─────────────┘    └─────────────┘    └─────────────┘    └─────┬─────┘  │
+│                                                              │         │
+│                   ┌──────────────────────────────────────────┘         │
+│                   ▼                                                  │
+│            ┌─────────────┐    ┌─────────────┐                        │
+│            │  Regenerate │───▶│  Quality    │◀──────────────────────│
+│            │  (retry)    │    │  Check      │                        │
+│            └─────────────┘    └─────────────┘                        │
+│                   │                                                │
+│                   └────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         DATA LAYER                                         │
 │                                                                             │
 │   ┌─────────────────────┐        ┌─────────────────────────────────────┐  │
-│   │  FAQ Documents       │        │  Persisted Index                     │  │
+│   │  FAQ Documents       │        │  Persisted Index                    │  │
 │   │  (data/faq_docs/)   │        │  (embeddings/)                       │  │
-│   │                     │        │                                      │  │
+│   │                     │        │                                     │  │
 │   │  • .txt files       │        │  • faiss.index (FAISS binary)       │  │
 │   │  • Chunked & indexed │        │  • metadata.pkl (chunks + meta)     │  │
 │   └─────────────────────┘        └─────────────────────────────────────┘  │
@@ -132,46 +153,71 @@ uploadFiles()      // Handles file uploads to /api/upload
 **Chat Endpoint Flow:**
 ```
 1. Validate user message
-2. Call rag.retrieve(user_query) → get top-k chunks
-3. Build context prompt with retrieved chunks
-4. Call LLM pipeline with prompt
+2. Classify query (simple vs complex)
+3. Simple query → Return greeting response (fast path)
+4. Complex query → Use GraphRAG (LangGraph self-correcting flow)
 5. Stream response back via SSE
 ```
 
-### 3. RAG Engine (rag_engine.py)
+### 3. Self-Correcting RAG Engine (graph_rag.py)
 
-**Technology:** SentenceTransformers, FAISS, NumPy
+**Technology:** LangGraph, StateGraph, TypedDict
+
+**Self-Correction Flow:**
+```
+Retrieve → Generate → Quality Check → (Regenerate if poor) → Done
+```
+
+**State (RAGState):**
+```python
+{
+    "query": str,           # User question
+    "retrieved_docs": list, # FAISS results
+    "context": str,         # Combined text from docs
+    "answer": str,          # Generated response
+    "quality_score": float, # 0.0 to 1.0
+    "attempts": int,        # Regeneration attempts (max 2)
+    "messages": list        # Conversation messages
+}
+```
+
+**Quality Threshold:** 0.7 (regenerates if below)
+
+**Max Regeneration Attempts:** 2
+
+### 4. RAG Engine (rag_engine.py)
+
+**Technology:** LangChain, LangChain-Community, HuggingFaceEmbeddings, FAISS
 
 **Components:**
 
-#### 3.1 Embedding Model
-- **Model:** `all-MiniLM-L6-v2`
+#### 4.1 Embedding Model
+- **Model:** `all-MiniLM-L6-v2` via LangChain's `HuggingFaceEmbeddings`
 - **Dimensions:** 384
 - **Purpose:** Convert text into semantic vector embeddings
 
-#### 3.2 Text Chunking
+#### 4.2 Text Chunking
 ```python
-CHUNK_SIZE = 500 words
-CHUNK_OVERLAP = 50 words
+CHUNK_SIZE = 500 characters
+CHUNK_OVERLAP = 50 characters
 ```
-- FAQ files are split into overlapping chunks
+- FAQ files are split into overlapping chunks using LangChain's `RecursiveCharacterTextSplitter`
 - Preserves context at chunk boundaries
 
-#### 3.3 FAISS Index
-- **Type:** IndexFlatL2 (brute-force L2 distance)
+#### 4.3 FAISS Vector Store
+- **Type:** LangChain's `FAISS` vectorstore (wraps FAISS IndexFlatL2)
 - **Purpose:** Fast similarity search on embeddings
-- **Persistence:** Saved to `embeddings/faiss.index`
+- **Persistence:** Saved to `embeddings/` directory
 
-#### 3.4 Retrieval Process
+#### 4.4 Retrieval Process
 ```python
-query_embedding = model.encode(user_query)
-distances, indices = index.search(query_embedding, k=5)
-results = [chunks[idx] for idx in indices]
+# LangChain simplifies retrieval
+results = vectorstore.similarity_search_with_score(query, k=5)
 ```
 
-### 4. Local LLM (distilgpt2)
+### 5. Local LLM (distilgpt2)
 
-**Technology:** HuggingFace Transformers
+**Technology:** LangChain HuggingFace Pipeline
 
 **Model Details:**
 - **Size:** 82 million parameters
@@ -183,16 +229,18 @@ results = [chunks[idx] for idx in indices]
   - `top_p=0.9`
   - `repetition_penalty=1.2`
 
-**Generation Prompt Template:**
-```
-Based on the following FAQ context, answer the user's question concisely and accurately.
+**LangChain Integration:**
+- Uses `HuggingFacePipeline` from `langchain_huggingface`
+- Uses `LLMChain` for prompt handling
+- Uses `PromptTemplate` for structured prompts
 
-Context:
-{retrieved_chunks}
+### 6. Reasoning Capabilities (llm.py)
 
-Question: {user_question}
-
-Answer:
+**Chain-of-Thought Prompting:**
+```python
+# generate_with_reasoning() adds step-by-step thinking
+llm.generate_with_reasoning(context, question)
+# Output includes reasoning steps + final answer
 ```
 
 ---
@@ -206,23 +254,32 @@ Answer:
    └── "How long does a refund take?" 
        └── POST /api/chat
 
-2. FLASK
-   └── rag.retrieve("How long does a refund take?", top_k=5)
+2. FLASK (QueryClassifier)
+   └── Classify as "complex" (not a simple greeting)
+   └── Call graph_rag.query()
 
-3. RAG ENGINE
-   └── Encode query → [0.123, -0.456, ...] (384-dim)
-   └── FAISS search → Returns 5 nearest chunks
-   └── Example chunk:
-       "Q: How long does a refund take?
-        A: Once we receive your returned item, 
-        refunds are processed within 3-5 business days."
+3. LANGRAPH SELF-CORRECTION FLOW
+   a. RETRIEVE
+       └── rag.retrieve() → FAISS search
+       └── Returns 5 nearest chunks
+   
+   b. GENERATE
+       └── llm.generate_with_context(context, question)
+       └── Initial answer: "Refunds take about a week"
+   
+   c. QUALITY CHECK
+       └── Evaluates answer quality: 0.6 (below threshold)
+       └── Decision: "regenerate"
+   
+   d. REGENERATE (attempt 1)
+       └── More explicit prompt
+       └── New answer: "Refunds are processed within 3-5 business days"
+   
+   e. QUALITY CHECK (attempt 2)
+       └── Score: 0.85 (above threshold)
+       └── Decision: "good" → END
 
-4. LLM (distilgpt2)
-   └── Input: Context + Question
-   └── Output: "Refunds are typically processed within 
-               3-5 business days after receiving the returned item."
-
-5. CLIENT (SSE Streaming)
+4. CLIENT (SSE Streaming)
    └── data: {"type": "sources", "sources": ["returns_and_refunds.txt"]}
    └── data: {"type": "token", "text": "Refund"}
    └── data: {"type": "token", "text": "are"}
@@ -238,14 +295,33 @@ Answer:
 knowledgeStore/
 ├── app.py                    # Flask backend
 ├── rag_engine.py             # RAG engine (embeddings + FAISS)
+├── src/
+│   ├── __init__.py
+│   ├── config.py            # Configuration management
+│   ├── rag_engine.py        # FAISS indexing and retrieval
+│   ├── llm.py               # LLM with reasoning capabilities
+│   ├── graph_rag.py         # LangGraph self-correcting RAG
+│   ├── query_classifier.py  # Query type detection
+│   ├── answer_extractor.py  # Answer extraction from chunks
+│   └── routes.py           # Flask API routes
+├── docs/
+│   └── LANGGRAPH_INTEGRATION.md
+├── tests/
+│   ├── __init__.py
+│   ├── test_config.py
+│   ├── test_query_classifier.py
+│   ├── test_answer_extractor.py
+│   ├── test_llm.py
+│   ├── test_rag_engine.py
+│   └── test_graph_rag.py
 ├── templates/
 │   └── index.html            # Frontend UI
 ├── data/
-│   └── faq_docs/            # FAQ document storage
+│   └── faq_docs/           # FAQ document storage
 │       ├── account_and_billing.txt
 │       ├── returns_and_refunds.txt
 │       └── shipping_and_delivery.txt
-├── embeddings/               # Persisted FAISS index
+├── embeddings/              # Persisted FAISS index
 │   ├── faiss.index
 │   └── metadata.pkl
 ├── .env                     # Environment variables
@@ -258,15 +334,34 @@ knowledgeStore/
 ## Dependencies
 
 ```
+# Web framework
 flask>=3.0.0
 flask-cors>=4.0.0
-dotenv>=1.0.0
+werkzeug>=3.0.0
+
+# LangChain
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface>=0.0.1
+
+# LangGraph (self-correcting RAG)
+langgraph>=0.2.0
+
+# Embeddings and vector store
 sentence-transformers>=3.0.0
 faiss-cpu>=1.8.0
 numpy>=1.26.0
-torch>=2.0.0
+
+# LLM
 transformers>=4.40.0
-werkzeug>=3.0.0
+torch>=2.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+httpx>=0.27.0
+
+# Testing
+pytest>=8.2.0
 ```
 
 ---
@@ -284,8 +379,10 @@ CHUNK_OVERLAP=50
 TOP_K_RESULTS=5
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 
-# LLM Settings (not used - local model)
-# ANTHROPIC_API_KEY=  # Not needed anymore
+# LLM Settings (local model - no API needed)
+LLM_MODEL=distilgpt2
+LLM_MAX_TOKENS=150
+LLM_TEMPERATURE=0.3
 ```
 
 ---
@@ -293,17 +390,20 @@ EMBEDDING_MODEL=all-MiniLM-L6-v2
 ## Advantages of This Architecture
 
 1. **Privacy:** All data stays local - no external API calls
-2. **Speed:** FAISS provides sub-millisecond similarity search
-3. **Cost-effective:** No API usage fees
-4. **Customizable:** Easy to swap embedding models or LLMs
+2. **Self-Correction:** LangGraph ensures poor answers are regenerated
+3. **Speed:** FAISS provides sub-millisecond similarity search
+4. **Cost-effective:** No API usage fees
 5. **Offline-capable:** Works without internet (after initial model download)
+6. **Reasoning:** Chain-of-thought prompting for complex questions
+
+---
 
 ## Limitations
 
 1. **CPU-only LLM:** Slower generation than GPU-based solutions
 2. **Small model:** distilgpt2 has limited reasoning capabilities
-3. **Chunk size:** May miss cross-chunk context
-4. **No fine-tuning:** Generic model may not understand domain specifics
+3. **Quality threshold:** May regenerate valid answers occasionally
+4. **Chunk size:** May miss cross-chunk context
 
 ---
 
@@ -311,11 +411,34 @@ EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 1. **Better LLM:** Use `gpt2-medium` or `opt-350m` for improved accuracy
 2. **GPU support:** Enable CUDA for faster inference
-3. **Hybrid search:** Combine keyword and semantic search
+3. **Query routing:** Different flows based on query complexity
 4. **Reranking:** Add a cross-encoder for better result ranking
-5. **Caching:** Cache frequent queries for instant responses
+5. **Conversation memory:** Track chat history across sessions
+6. **Hybrid search:** Combine keyword and semantic search
 
 ---
 
-*Document generated: 2026-04-19*
-*System: knowledgeStore RAG Application*
+## Testing
+
+Run all tests:
+```bash
+pytest tests/ -v
+```
+
+Run with coverage:
+```bash
+pytest tests/ -v --cov=src
+```
+
+Test files:
+- `test_config.py` - Configuration management
+- `test_query_classifier.py` - Query classification
+- `test_answer_extractor.py` - Answer extraction
+- `test_llm.py` - LLM generation and reasoning
+- `test_rag_engine.py` - FAISS indexing and retrieval
+- `test_graph_rag.py` - LangGraph self-correction
+
+---
+
+*Document generated: 2026-04-21*
+*System: knowledgeStore RAG Application with LangGraph Self-Correction*

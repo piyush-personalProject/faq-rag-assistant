@@ -13,6 +13,7 @@ from .rag_engine import RAGEngine
 from .llm import LLMManager
 from .query_classifier import QueryClassifier
 from .answer_extractor import AnswerExtractor
+from .graph_rag import get_graph_rag
 
 
 # Create blueprint
@@ -88,22 +89,49 @@ def chat():
     is_simple, simple_response = QueryClassifier.is_simple_query(user_message)
     
     if is_simple:
-        chunks = []
         sources = []
     else:
-        chunks = rag.retrieve(user_message, top_k=config.TOP_K_RESULTS)
-        sources = list({c["source"] for c in chunks}) if chunks else []
+        # Use the self-correcting graph for complex queries
+        graph_rag = get_graph_rag()
+        result = graph_rag.query(user_message)
+        
+        sources = result.get("sources", [])
+        
+        def generate():
+            # Send sources metadata first
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+            
+            response_text = result.get("answer", "")
+            
+            if not response_text:
+                response_text = "I don't have any relevant information in the knowledge base. Please upload FAQ documents using the sidebar, then try again."
+            
+            # Stream response
+            chunk_size = 50
+            for i in range(0, len(response_text), chunk_size):
+                chunk = response_text[i:i+chunk_size]
+                yield f"data: {json.dumps({'type': 'token', 'text': chunk})}\n\n"
+            
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    
+    # For simple queries, use the original logic
+    chunks = []
     
     def generate():
         # Send sources metadata first
-        yield f"data: {json.dumps({'type': 'sources', 'sources': sources})}\n\n"
+        yield f"data: {json.dumps({'type': 'sources', 'sources': []})}\n\n"
         
-        if is_simple and simple_response:
+        if simple_response:
             response_text = simple_response
-        elif chunks and llm.is_available:
-            response_text = _generate_with_llm(user_message, chunks)
-        elif chunks:
-            response_text = _generate_without_llm(user_message, chunks)
         else:
             response_text = "I don't have any relevant information in the knowledge base. Please upload FAQ documents using the sidebar, then try again."
         

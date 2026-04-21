@@ -1,11 +1,12 @@
 # Knowledge Store - Enterprise RAG FAQ System
 
-A modular, production-ready RAG (Retrieval Augmented Generation) FAQ assistant that uses local embeddings and LLMs for intelligent question answering.
+A modular, production-ready RAG (Retrieval Augmented Generation) FAQ assistant that uses local embeddings and LLMs for intelligent question answering with self-correction capabilities.
 
 ## Features
 
 - **Local RAG Pipeline**: FAISS-powered semantic search with sentence transformers
 - **Local LLM**: Uses distilgpt2 for text generation (CPU-friendly)
+- **Self-Correcting RAG**: LangGraph-powered quality checks with automatic regeneration
 - **Modular Architecture**: Clean separation of concerns for easy maintenance
 - **Comprehensive Tests**: Unit tests for all core components
 - **REST API**: Streaming responses for real-time chat experience
@@ -22,7 +23,8 @@ knowledgeStore/
 │   ├── __init__.py
 │   ├── config.py           # Configuration management
 │   ├── rag_engine.py       # FAISS indexing and retrieval
-│   ├── llm.py              # LLM text generation
+│   ├── llm.py              # LLM text generation with reasoning
+│   ├── graph_rag.py        # LangGraph self-correcting RAG
 │   ├── query_classifier.py # Query type detection
 │   ├── answer_extractor.py # Answer extraction from chunks
 │   └── routes.py           # Flask API routes
@@ -31,7 +33,13 @@ knowledgeStore/
 │   ├── __init__.py
 │   ├── test_config.py
 │   ├── test_query_classifier.py
-│   └── test_answer_extractor.py
+│   ├── test_answer_extractor.py
+│   ├── test_llm.py
+│   ├── test_rag_engine.py
+│   └── test_graph_rag.py
+│
+├── docs/                   # Documentation
+│   └── LANGGRAPH_INTEGRATION.md
 │
 ├── data/faq_docs/          # FAQ documents storage
 ├── embeddings/             # FAISS index storage
@@ -132,7 +140,7 @@ A: You can return items within 30 days of purchase.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `CHUNK_SIZE` | 500 | Words per text chunk |
+| `CHUNK_SIZE` | 500 | Characters per text chunk |
 | `CHUNK_OVERLAP` | 50 | Overlap between chunks |
 | `TOP_K_RESULTS` | 5 | Number of chunks to retrieve |
 | `EMBEDDING_MODEL` | all-MiniLM-L6-v2 | Sentence transformer model |
@@ -142,6 +150,7 @@ A: You can return items within 30 days of purchase.
 
 ## Architecture
 
+### Standard Query Flow
 ```
 User Input
     ↓
@@ -156,6 +165,38 @@ QueryClassifier (detects greetings vs FAQ queries)
 Streaming Response
 ```
 
+### Self-Correcting RAG Flow (LangGraph)
+```
+User Query
+    ↓
+Classify Query → Simple? → Use fast path
+    ↓ (complex)
+[Retrieve Docs] → FAISS similarity search
+    ↓
+[Generate Answer] → LLM with context
+    ↓
+[Quality Check] → Score ≥ 0.7? → END (good)
+    ↓ (no)
+[Regenerate] → Attempt 2
+    ↓
+[Quality Check] → Still poor? → END (finalize)
+    ↓ (no)
+[Regenerate] → Attempt 3
+    ↓
+[END]
+```
+
+## Self-Correction with LangGraph
+
+The system uses LangGraph to implement self-correcting RAG:
+
+1. **Retrieve**: Fetch relevant documents from FAISS
+2. **Generate**: Create initial answer using LLM
+3. **Quality Check**: Evaluate answer quality (0-1 scale)
+4. **Regenerate** (if needed): If quality < 0.7 and attempts < 2, regenerate with modified prompt
+
+This ensures better accuracy by catching and correcting poor responses.
+
 ## Development
 
 ### Running in Development Mode
@@ -169,3 +210,16 @@ FLASK_DEBUG=True python app.py
 ```bash
 pytest tests/ -v --cov=src
 ```
+
+### Adding Reasoning to LLM
+
+The LLM module supports chain-of-thought reasoning:
+
+```python
+from src.llm import llm
+
+# Generate with step-by-step reasoning
+response = llm.generate_with_reasoning(context, question)
+
+# Extract final answer from reasoning output
+answer = llm.extract_answer_from_reasoning(response)

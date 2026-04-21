@@ -3,13 +3,21 @@ flask==3.0.3
 flask-cors==4.0.1
 werkzeug==3.0.4
 
-# RAG dependencies
+# LangChain dependencies
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-huggingface==0.0.1
+
+# LangGraph for self-correcting RAG
+langgraph>=0.2.0
+
+# Embeddings and vector store
 sentence-transformers==3.0.1
 faiss-cpu==1.8.0
 numpy==1.26.4
 
 # LLM
-transformers==4.41.3
+transformers==4.46.0
 torch==2.3.1
 
 # Utilities
