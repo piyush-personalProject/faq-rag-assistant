@@ -24,7 +24,7 @@ class Config:
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     
     # LLM settings
-    LLM_MODEL = os.getenv("LLM_MODEL", "distilgpt2")
+    LLM_MODEL = os.getenv("LLM_MODEL", "gpt2-medium")
     LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 150))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.3))
     

@@ -33,7 +33,7 @@ def index():
 
 def auto_ingest():
     """Auto-ingest FAQ files on startup if available."""
-    faq_files = [f for f in os.listdir(config.UPLOAD_FOLDER) if f.endswith(".txt")]
+    faq_files = [f for f in os.listdir(config.UPLOAD_FOLDER) if f.endswith((".txt", ".pdf", ".doc", ".docx"))]
     if faq_files:
         print(f"[App] Found {len(faq_files)} FAQ file(s) in {config.UPLOAD_FOLDER}. Auto-ingesting...")
         from src.routes import rag

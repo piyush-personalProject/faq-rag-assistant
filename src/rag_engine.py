@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 import numpy as np
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_community.document_loaders import PyPDFLoader, UnstructuredWordDocumentLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
@@ -79,27 +80,48 @@ class RAGEngine:
         
         return documents
     
+    def _load_document(self, file_path: Path) -> List[Document]:
+        """Load document using appropriate LangChain loader based on file extension."""
+        suffix = file_path.suffix.lower()
+        
+        if suffix == ".pdf":
+            loader = PyPDFLoader(str(file_path))
+            return loader.load()
+        elif suffix in [".doc", ".docx"]:
+            loader = UnstructuredWordDocumentLoader(str(file_path))
+            return loader.load()
+        elif suffix == ".txt":
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+            return self._chunk_text(text, file_path.name)
+        else:
+            return []
+    
     def ingest_folder(self, folder_path: str) -> Dict:
         """
-        Scan folder for .txt files, embed them, and add to FAISS index.
+        Scan folder for .txt, .pdf, .doc, .docx files, embed them, and add to FAISS index.
         
         Args:
-            folder_path: Path to folder containing .txt files
+            folder_path: Path to folder containing supported files
             
         Returns:
             Summary dict with processing results
         """
         folder = Path(folder_path)
-        txt_files = list(folder.rglob("*.txt"))
+        supported_extensions = [".txt", ".pdf", ".doc", ".docx"]
+        files = [f for f in folder.rglob("*") if f.suffix.lower() in supported_extensions]
         
-        if not txt_files:
-            return {"status": "error", "message": "No .txt files found in folder."}
+        if not files:
+            return {"status": "error", "message": f"No supported files found in folder. Supported: {supported_extensions}"}
         
         all_documents = []
-        for txt_file in txt_files:
-            text = txt_file.read_text(encoding="utf-8", errors="ignore")
-            documents = self._chunk_text(text, txt_file.name)
-            all_documents.extend(documents)
+        for file_path in files:
+            documents = self._load_document(file_path)
+            if documents:
+                chunked = self._chunk_text(documents[0].page_content, file_path.name)
+                all_documents.extend(chunked)
+        
+        if not all_documents:
+            return {"status": "error", "message": "No content could be extracted from files."}
         
         # Add documents to vectorstore
         self.vectorstore.add_documents(all_documents)
@@ -107,35 +129,38 @@ class RAGEngine:
         
         return {
             "status": "success",
-            "files_processed": len(txt_files),
+            "files_processed": len(files),
             "chunks_added": len(all_documents),
             "total_chunks": self.vectorstore.index.ntotal,
         }
     
     def ingest_file(self, file_path: str) -> Dict:
         """
-        Ingest a single .txt file into the index.
+        Ingest a single .txt, .pdf, .doc, or .docx file into the index.
         
         Args:
-            file_path: Path to the .txt file
+            file_path: Path to the file
             
         Returns:
             Summary dict with processing results
         """
         path = Path(file_path)
-        if not path.exists() or path.suffix != ".txt":
-            return {"status": "error", "message": "File not found or not a .txt file."}
+        suffix = path.suffix.lower()
+        if not path.exists() or suffix not in [".txt", ".pdf", ".doc", ".docx"]:
+            return {"status": "error", "message": f"File not found or unsupported format. Supported: .txt, .pdf, .doc, .docx"}
         
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        documents = self._chunk_text(text, path.name)
+        documents = self._load_document(path)
+        if not documents:
+            return {"status": "error", "message": "No content could be extracted from file."}
         
-        self.vectorstore.add_documents(documents)
+        chunked = self._chunk_text(documents[0].page_content, path.name)
+        self.vectorstore.add_documents(chunked)
         self._save_index()
         
         return {
             "status": "success",
             "file": path.name,
-            "chunks_added": len(documents),
+            "chunks_added": len(chunked),
             "total_chunks": self.vectorstore.index.ntotal,
         }
     

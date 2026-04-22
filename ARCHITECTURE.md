@@ -8,6 +8,8 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
 - All processing happens locally - no external API calls required
 - Self-correcting RAG with LangGraph quality checks
 - Chain-of-thought reasoning for better accuracy
+- Multi-turn conversation support with history tracking
+- MCP (Model Context Protocol) server for AI assistant integration
 
 ---
 
@@ -52,7 +54,7 @@ This is a **Retrieval-Augmented Generation (RAG)** system that combines vector-b
                      ▼                                   ▼
 ┌─────────────────────────────┐       ┌─────────────────────────────────────┐
 │      RAG ENGINE             │       │      LOCAL LLM                      │
-│      (rag_engine.py)        │       │      (distilgpt2)                   │
+│      (rag_engine.py)        │       │      (gpt2-medium)                  │
 │                            │       │                                     │
 │  ┌───────────────────────┐ │       │  • 82MB model                       │
 │  │  SentenceTransformer   │ │       │  • CPU inference                   │
@@ -172,6 +174,7 @@ Retrieve → Generate → Quality Check → (Regenerate if poor) → Done
 ```python
 {
     "query": str,           # User question
+    "history": list,         # Conversation history (BaseMessage objects)
     "retrieved_docs": list, # FAISS results
     "context": str,         # Combined text from docs
     "answer": str,          # Generated response
@@ -215,12 +218,12 @@ CHUNK_OVERLAP = 50 characters
 results = vectorstore.similarity_search_with_score(query, k=5)
 ```
 
-### 5. Local LLM (distilgpt2)
+### 5. Local LLM (gpt2-medium)
 
 **Technology:** LangChain HuggingFace Pipeline
 
 **Model Details:**
-- **Size:** 82 million parameters
+- **Size:** 82 million parameters (gpt2-medium)
 - **Memory:** ~500MB RAM
 - **Inference Device:** CPU
 - **Generation Settings:**
@@ -242,6 +245,29 @@ results = vectorstore.similarity_search_with_score(query, k=5)
 llm.generate_with_reasoning(context, question)
 # Output includes reasoning steps + final answer
 ```
+
+### 7. Conversation History (Multi-turn Support)
+
+**History Format:**
+- Client sends `history` array in chat request: `[{"role": "user"|"assistant", "content": "..."}]`
+- Server converts to `HumanMessage`/`AIMessage` objects from LangChain
+
+**History Processing:**
+```python
+# In graph_rag.py - _format_history()
+def _format_history(self, history: List[BaseMessage]) -> str:
+    # Formats last 6 messages into prompt context
+    formatted = []
+    for msg in history[-6:]:
+        role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+        formatted.append(f"{role}: {msg.content}")
+    return "\n".join(formatted)
+```
+
+**Integration Points:**
+- `routes.py`: Converts incoming history dicts to LangChain messages
+- `graph_rag.py`: Passes history through RAGState; formats for LLM prompts
+- `llm.py`: Includes history context in `generate_with_context()`
 
 ---
 
@@ -295,6 +321,7 @@ llm.generate_with_reasoning(context, question)
 knowledgeStore/
 ├── app.py                    # Flask backend
 ├── rag_engine.py             # RAG engine (embeddings + FAISS)
+├── mcp_server.py            # MCP server for AI assistant integration
 ├── src/
 │   ├── __init__.py
 │   ├── config.py            # Configuration management
@@ -305,7 +332,7 @@ knowledgeStore/
 │   ├── answer_extractor.py  # Answer extraction from chunks
 │   └── routes.py           # Flask API routes
 ├── docs/
-│   └── LANGGRAPH_INTEGRATION.md
+│   └── MCP_INTEGRATION.md
 ├── tests/
 │   ├── __init__.py
 │   ├── test_config.py
@@ -360,6 +387,9 @@ torch>=2.0.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
 
+# MCP (Model Context Protocol)
+mcp>=1.0.0
+
 # Testing
 pytest>=8.2.0
 ```
@@ -380,7 +410,7 @@ TOP_K_RESULTS=5
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 # LLM Settings (local model - no API needed)
-LLM_MODEL=distilgpt2
+LLM_MODEL=gpt2-medium
 LLM_MAX_TOKENS=150
 LLM_TEMPERATURE=0.3
 ```
@@ -401,7 +431,7 @@ LLM_TEMPERATURE=0.3
 ## Limitations
 
 1. **CPU-only LLM:** Slower generation than GPU-based solutions
-2. **Small model:** distilgpt2 has limited reasoning capabilities
+2. **Small model:** gpt2-medium has limited reasoning capabilities
 3. **Quality threshold:** May regenerate valid answers occasionally
 4. **Chunk size:** May miss cross-chunk context
 
@@ -413,8 +443,8 @@ LLM_TEMPERATURE=0.3
 2. **GPU support:** Enable CUDA for faster inference
 3. **Query routing:** Different flows based on query complexity
 4. **Reranking:** Add a cross-encoder for better result ranking
-5. **Conversation memory:** Track chat history across sessions
-6. **Hybrid search:** Combine keyword and semantic search
+5. **Hybrid search:** Combine keyword and semantic search
+6. **MCP Server:** Expose RAG tools via MCP protocol for AI assistant integration (see [`docs/MCP_INTEGRATION.md`](docs/MCP_INTEGRATION.md))
 
 ---
 
@@ -440,5 +470,5 @@ Test files:
 
 ---
 
-*Document generated: 2026-04-21*
-*System: knowledgeStore RAG Application with LangGraph Self-Correction*
+*Document generated: 2026-04-22*
+*System: knowledgeStore RAG Application with LangGraph Self-Correction and MCP Server*

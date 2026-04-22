@@ -5,18 +5,21 @@ A modular, production-ready RAG (Retrieval Augmented Generation) FAQ assistant t
 ## Features
 
 - **Local RAG Pipeline**: FAISS-powered semantic search with sentence transformers
-- **Local LLM**: Uses distilgpt2 for text generation (CPU-friendly)
+- **Local LLM**: Uses gpt2-medium for text generation (CPU-friendly)
 - **Self-Correcting RAG**: LangGraph-powered quality checks with automatic regeneration
+- **Conversation History**: Multi-turn dialogue support for contextual follow-up questions
 - **Modular Architecture**: Clean separation of concerns for easy maintenance
 - **Comprehensive Tests**: Unit tests for all core components
 - **REST API**: Streaming responses for real-time chat experience
+- **MCP Server**: Model Context Protocol server for AI assistant integration
 
 ## Project Structure
 
 ```
 knowledgeStore/
 ├── app.py                  # Flask application entry point
-├── requirements.txt       # Python dependencies
+├── mcp_server.py           # MCP server for AI assistant integration
+├── requirements.txt        # Python dependencies
 ├── .env                    # Environment variables
 │
 ├── src/                    # Source modules
@@ -39,7 +42,7 @@ knowledgeStore/
 │   └── test_graph_rag.py
 │
 ├── docs/                   # Documentation
-│   └── LANGGRAPH_INTEGRATION.md
+│   └── MCP_INTEGRATION.md
 │
 ├── data/faq_docs/          # FAQ documents storage
 ├── embeddings/             # FAISS index storage
@@ -84,7 +87,7 @@ TOP_K_RESULTS=5
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 # LLM Settings
-LLM_MODEL=distilgpt2
+LLM_MODEL=gpt2-medium
 LLM_MAX_TOKENS=150
 LLM_TEMPERATURE=0.3
 ```
@@ -122,6 +125,20 @@ curl -X POST http://localhost:5000/api/chat \
   -d '{"message": "How do I track my order?"}'
 ```
 
+### Chat with History (Multi-turn Conversation)
+
+```bash
+curl -X POST http://localhost:5000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "What about exchanges?",
+    "history": [
+      {"role": "user", "content": "How do returns work?"},
+      {"role": "assistant", "content": "Items can be returned within 30 days with receipt."}
+    ]
+  }'
+```
+
 ## Adding FAQ Content
 
 Place `.txt` files in `data/faq_docs/` directory. The system will automatically ingest them on startup.
@@ -144,7 +161,7 @@ A: You can return items within 30 days of purchase.
 | `CHUNK_OVERLAP` | 50 | Overlap between chunks |
 | `TOP_K_RESULTS` | 5 | Number of chunks to retrieve |
 | `EMBEDDING_MODEL` | all-MiniLM-L6-v2 | Sentence transformer model |
-| `LLM_MODEL` | distilgpt2 | Local LLM model |
+| `LLM_MODEL` | gpt2-medium | Local LLM model |
 | `LLM_MAX_TOKENS` | 150 | Max tokens in response |
 | `LLM_TEMPERATURE` | 0.3 | LLM creativity (0-2) |
 

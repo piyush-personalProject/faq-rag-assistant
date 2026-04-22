@@ -68,12 +68,12 @@ class LLMManager:
                 device=-1,  # CPU
             )
             
-            # Create prompt template
+            # Create prompt template with optional history support
             prompt = PromptTemplate(
-                input_variables=["context", "question"],
+                input_variables=["context", "question", "history"],
                 template="""You are a helpful FAQ assistant. Use the context to answer the question accurately.
 
-Context:
+{history}Context:
 {context}
 
 Question: {question}
@@ -158,7 +158,7 @@ Answer:"""
             return None
         
         try:
-            result = self.chain.invoke({"context": "", "question": prompt})
+            result = self.chain.invoke({"context": "", "question": prompt, "history": ""})
             return self._post_process(result) if result else None
         except Exception as e:
             print(f"[LLM] Generation error: {e}")
@@ -185,13 +185,14 @@ Question: {question}
 
 Answer:"""
     
-    def generate_with_context(self, context_text: str, question: str) -> Optional[str]:
+    def generate_with_context(self, context_text: str, question: str, history_context: str = "") -> Optional[str]:
         """
         Generate response with RAG context using LangChain.
         
         Args:
             context_text: Retrieved context chunks
             question: User question
+            history_context: Optional conversation history for multi-turn conversations
             
         Returns:
             Generated response or None if generation fails
@@ -199,10 +200,14 @@ Answer:"""
         if not self.chain:
             return None
         
+        # Format history section if provided
+        history_section = f"Conversation History:\n{history_context}\n\n" if history_context else ""
+        
         try:
             result = self.chain.invoke({
                 "context": context_text,
-                "question": question
+                "question": question,
+                "history": history_section
             })
             # Chain returns a string directly
             return self._post_process(result) if result else None
@@ -240,7 +245,7 @@ Think through this step by step:
 Provide your step-by-step reasoning first, then give the final answer."""
 
         try:
-            result = self.chain.invoke({"context": "", "question": reasoning_prompt})
+            result = self.chain.invoke({"context": "", "question": reasoning_prompt, "history": ""})
             return self._post_process(result) if result else None
         except Exception as e:
             print(f"[LLM] Reasoning generation error: {e}")

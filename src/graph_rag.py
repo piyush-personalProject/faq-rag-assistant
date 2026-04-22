@@ -16,6 +16,7 @@ from .answer_extractor import AnswerExtractor
 class RAGState(TypedDict):
     """State passed between graph nodes."""
     query: str
+    history: List[BaseMessage]
     retrieved_docs: list
     context: str
     answer: str
@@ -91,7 +92,14 @@ class GraphRAG:
                 "messages": state["messages"] + ["No context available"]
             }
         
-        answer = self.llm.generate_with_context(state["context"], state["query"])
+        # Build conversation history context if available
+        history_context = self._format_history(state["history"]) if state["history"] else ""
+        
+        answer = self.llm.generate_with_context(
+            state["context"], 
+            state["query"],
+            history_context=history_context
+        )
         
         # If LLM failed, returned empty, or returned gibberish, extract from chunks directly
         # Check if answer is useful: should be > 20 chars and contain relevant content
@@ -156,6 +164,18 @@ class GraphRAG:
         
         return False
     
+    def _format_history(self, history: List[BaseMessage]) -> str:
+        """Format conversation history for inclusion in prompt."""
+        if not history:
+            return ""
+        
+        formatted = []
+        for msg in history[-6:]:  # Last 6 messages to keep context manageable
+            role = "User" if isinstance(msg, HumanMessage) else "Assistant"
+            formatted.append(f"{role}: {msg.content}")
+        
+        return "\n".join(formatted)
+    
     def _quality_check_node(self, state: RAGState) -> RAGState:
         """Evaluate if the generated answer meets quality threshold."""
         quality_prompt = f"""Evaluate this answer quality for the query: "{state['query']}"
@@ -199,9 +219,12 @@ Return only the numeric score:"""
         # Expand context with all retrieved documents
         expanded_context = state["context"]
         
+        # Build conversation history context if available
+        history_context = self._format_history(state["history"]) if state["history"] else ""
+        
         # Try a more direct prompt with explicit instruction
         regenerate_prompt = f"""Based on this context, give a direct, accurate answer.
-
+{history_context}
 Context:
 {expanded_context}
 
@@ -250,13 +273,18 @@ Answer:"""
         
         Args:
             user_query: The user's question
-            history: Optional conversation history (unused in current impl)
+            history: Optional conversation history (list of BaseMessage objects)
             
         Returns:
             dict with 'answer', 'quality_score', 'attempts', 'sources'
         """
+        # Convert list of dicts to BaseMessage objects if needed
+        if history is None:
+            history = []
+        
         initial_state = {
             "query": user_query,
+            "history": history,
             "retrieved_docs": [],
             "context": "",
             "answer": "",

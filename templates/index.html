@@ -15,7 +15,7 @@
       --panel:     #1a1e2a;
       --border:    #252a38;
       --accent:    #4f9eff;
-      --accent2:   #7c5cfc;
+      --accent2:   #7c5cfc;  
       --success:   #34d399;
       --warn:      #fbbf24;
       --danger:    #f87171;
@@ -731,16 +731,54 @@
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br/>');
   }
 
+  // ── Query expansion for follow-up questions ────────────────────────────────
+  const FOLLOWUP_TRIGGERS = ['why', 'why?', 'how', 'how?', 'what', 'what?', 'which', 'which?', 'where', 'where?', 'when', 'when?'];
+  const TOPIC_KEYWORDS = ['refund', 'return', 'policy', 'shipping', 'delivery', 'account', 'billing', 'payment', 'premium', 'cancel', 'exchange', 'damaged', 'lost'];
+
+  function expandFollowupQuery(currentQuery, conversationHistory) {
+    const normalizedCurrent = currentQuery.toLowerCase().trim();
+    const isFollowup = FOLLOWUP_TRIGGERS.some(t => normalizedCurrent === t || normalizedCurrent === t.replace('?', ''));
+    
+    if (!isFollowup || conversationHistory.length === 0) {
+      return currentQuery;
+    }
+    
+    // Find the last user message in history
+    let lastUserMessage = '';
+    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+      if (conversationHistory[i].role === 'user') {
+        lastUserMessage = conversationHistory[i].content.toLowerCase();
+        break;
+      }
+    }
+    
+    // Check if last message had topic keywords
+    const hasTopic = TOPIC_KEYWORDS.some(kw => lastUserMessage.includes(kw));
+    
+    if (isFollowup && hasTopic) {
+      // Expand the query to include topic context
+      const lastQuestion = lastUserMessage.length > 100 
+        ? lastUserMessage.substring(0, 100) + '...' 
+        : lastUserMessage;
+      return `Regarding your question about "${lastQuestion}": ${currentQuery}`;
+    }
+    
+    return currentQuery;
+  }
+
   async function sendMessage() {
-    const text = userInput.value.trim();
-    if (!text || isStreaming) return;
+    const rawText = userInput.value.trim();
+    if (!rawText || isStreaming) return;
+
+    // Expand follow-up queries to include context
+    const text = expandFollowupQuery(rawText, conversationHistory);
 
     isStreaming = true;
     sendBtn.disabled = true;
     userInput.value = '';
     userInput.style.height = 'auto';
 
-    appendMsg('user', text);
+    appendMsg('user', rawText);
     const typingEl = showTyping();
 
     try {
@@ -796,7 +834,7 @@
             }
 
           } else if (payload.type === 'done') {
-            conversationHistory.push({ role: 'user',      content: text });
+            conversationHistory.push({ role: 'user',      content: rawText });
             conversationHistory.push({ role: 'assistant', content: botText });
           }
         }

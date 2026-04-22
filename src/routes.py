@@ -7,6 +7,7 @@ import os
 import json
 from flask import Blueprint, request, jsonify, stream_with_context, Response
 from werkzeug.utils import secure_filename
+from langchain_core.messages import HumanMessage, AIMessage
 
 from .config import config
 from .rag_engine import RAGEngine
@@ -85,15 +86,26 @@ def chat():
     if not user_message:
         return jsonify({"error": "Empty message"}), 400
     
+    # Convert history from dicts to BaseMessage objects if provided
+    history_data = data.get("history", [])
+    history = []
+    for msg in history_data:
+        role = msg.get("role", "").lower()
+        content = msg.get("content", "")
+        if role == "user":
+            history.append(HumanMessage(content=content))
+        elif role == "assistant":
+            history.append(AIMessage(content=content))
+    
     # Classify query to determine processing strategy
     is_simple, simple_response = QueryClassifier.is_simple_query(user_message)
     
     if is_simple:
         sources = []
     else:
-        # Use the self-correcting graph for complex queries
+        # Use the self-correcting graph for complex queries (with history)
         graph_rag = get_graph_rag()
-        result = graph_rag.query(user_message)
+        result = graph_rag.query(user_message, history=history if history else None)
         
         sources = result.get("sources", [])
         
