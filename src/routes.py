@@ -105,7 +105,32 @@ def chat():
     else:
         # Use the self-correcting graph for complex queries (with history)
         graph_rag = get_graph_rag()
-        result = graph_rag.query(user_message, history=history if history else None)
+        
+        # Use threading-based timeout for cross-platform compatibility
+        import threading
+        
+        result_container = [None]
+        error_container = [None]
+        
+        def run_query():
+            try:
+                result_container[0] = graph_rag.query(user_message, history=history if history else None)
+            except Exception as e:
+                error_container[0] = str(e)
+        
+        thread = threading.Thread(target=run_query)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=30)  # 30 second timeout
+        
+        if thread.is_alive():
+            # Thread is still running - query is taking too long
+            result = {"answer": "I apologize, but the query took too long to process. Please try again.", "sources": [], "quality_score": 0}
+        elif error_container[0]:
+            print(f"[Routes] Graph query error: {error_container[0]}")
+            result = {"answer": "An error occurred while processing your query. Please try again.", "sources": [], "quality_score": 0}
+        else:
+            result = result_container[0]
         
         sources = result.get("sources", [])
         
