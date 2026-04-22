@@ -177,36 +177,29 @@ class GraphRAG:
         return "\n".join(formatted)
     
     def _quality_check_node(self, state: RAGState) -> RAGState:
-        """Evaluate if the generated answer meets quality threshold."""
-        quality_prompt = f"""Evaluate this answer quality for the query: "{state['query']}"
-
-Answer: {state['answer']}
-Retrieved context: {state['context'][:500] if state['context'] else 'None'}
-
-Rate quality 0-1 where:
-- 0.0-0.3: Poor (irrelevant, hallucinated, or incomplete)
-- 0.4-0.6: Medium (partially correct but incomplete)
-- 0.7-1.0: Good (accurate and complete)
-
-Return only the numeric score:"""
+        """Evaluate if the generated answer meets quality threshold using heuristic."""
+        # Simple heuristic-based quality check (no LLM call needed)
+        answer = state.get("answer", "")
+        context = state.get("context", "")
         
-        try:
-            score_text = self.llm.generate(quality_prompt)
-            if score_text:
-                # Extract numeric score
-                score_text = score_text.strip()
-                # Try to find a number at the start
-                import re
-                match = re.search(r'^[\d.]+', score_text)
-                if match:
-                    score = float(match.group())
-                    score = max(0.0, min(1.0, score))  # Clamp to [0, 1]
-                else:
-                    score = 0.5
+        if not answer or len(answer) < 20:
+            score = 0.3
+        else:
+            # Check overlap between answer and context words
+            context_words = set(re.findall(r'\b\w{4,}\b', context.lower()))
+            answer_words = set(re.findall(r'\b\w{4,}\b', answer.lower()))
+            stop_words = {'what', 'your', 'have', 'from', 'this', 'with', 'will', 'been', 'they', 'their', 'there', 'when', 'where', 'which', 'about', 'some', 'would', 'could', 'should', 'into', 'only', 'other', 'then', 'than', 'very', 'also', 'after', 'before', 'such', 'each', 'more', 'most', 'some', 'these', 'those'}
+            context_words -= stop_words
+            answer_words -= stop_words
+            
+            overlap = context_words & answer_words
+            
+            # Good overlap means answer is relevant to context
+            if len(context_words) > 0:
+                overlap_ratio = len(overlap) / len(context_words)
+                score = min(0.9, overlap_ratio + 0.3)  # Scale: 0.3 to 0.9 based on overlap
             else:
                 score = 0.5
-        except Exception:
-            score = 0.5
         
         return {
             **state,

@@ -121,11 +121,17 @@ def chat():
         thread = threading.Thread(target=run_query)
         thread.daemon = True
         thread.start()
-        thread.join(timeout=30)  # 30 second timeout
+        thread.join(timeout=15)  # 15 second timeout to prevent hanging
         
         if thread.is_alive():
             # Thread is still running - query is taking too long
-            result = {"answer": "I apologize, but the query took too long to process. Please try again.", "sources": [], "quality_score": 0}
+            # Fallback to direct RAG retrieval without LLM
+            chunks = rag.retrieve(user_message, top_k=3)
+            extracted = AnswerExtractor.extract(user_message, chunks) if chunks else ""
+            if extracted:
+                result = {"answer": extracted, "sources": list({c["source"] for c in chunks if chunks})}
+            else:
+                result = {"answer": "I apologize, but the query took too long to process. Please try again.", "sources": [], "quality_score": 0}
         elif error_container[0]:
             print(f"[Routes] Graph query error: {error_container[0]}")
             result = {"answer": "An error occurred while processing your query. Please try again.", "sources": [], "quality_score": 0}
