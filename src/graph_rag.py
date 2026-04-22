@@ -135,8 +135,9 @@ class GraphRAG:
         # Check overlap - answer should share some words with context
         overlap = context_words & answer_words
         
-        # If very low overlap (< 15% of context words), likely gibberish
-        if len(context_words) > 0 and len(overlap) < max(1, len(context_words) // 7):
+        # If very low overlap (< 33% of context words), likely gibberish
+        # Relaxed from //7 to //3 for better RAG performance with proper retrieval
+        if len(context_words) > 0 and len(overlap) < max(1, len(context_words) // 3):
             return True
         
         # Check for repetitive patterns (hallucination sign)
