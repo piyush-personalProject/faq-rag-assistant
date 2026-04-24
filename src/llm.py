@@ -62,7 +62,6 @@ class LLMManager:
                     temperature=config.LLM_TEMPERATURE + 0.2,  # Slightly higher
                     top_p=0.9,
                     repetition_penalty=1.5,
-                    pad_token_id=50256,
                     do_sample=True,
                 ),
                 device=-1,  # CPU

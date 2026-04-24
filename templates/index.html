@@ -487,11 +487,11 @@
     <button class="sidebar-close" id="sidebar-close" title="Close">✕</button>
 
     <div>
-      <div class="section-label">Upload FAQ Docs</div>
+      <div class="section-label">Upload Documents</div>
       <div class="upload-zone" id="drop-zone">
-        <input type="file" id="file-input" accept=".txt" multiple/>
+        <input type="file" id="file-input" accept=".txt,.pdf,.doc,.docx" multiple/>
         <div class="upload-icon">📂</div>
-        <p><strong>Drop .txt files</strong> here<br/>or click to browse</p>
+        <p><strong>Drop files</strong> here<br/>or click to browse<br/><small style="color:var(--muted)">.txt, .pdf, .doc, .docx</small></p>
       </div>
       <div id="upload-log" style="margin-top:10px;"></div>
     </div>
@@ -499,7 +499,7 @@
     <div>
       <div class="section-label">Actions</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-primary" id="ingest-btn">⚡ Ingest FAQ Folder</button>
+        <button class="btn btn-primary" id="ingest-btn">⚡ Ingest Data Folder</button>
         <button class="btn btn-danger"  id="clear-btn">🗑 Clear Index</button>
       </div>
     </div>
@@ -525,7 +525,7 @@
     <div id="chat-window">
       <div class="welcome" id="welcome">
         <h2>Ask Me Anything</h2>
-        <p>Your AI-powered support assistant. Upload your FAQ documents on the left, then ask questions and get instant, context-aware answers.</p>
+        <p>Your AI-powered support assistant. Upload your documents on the left (.txt, .pdf, .doc, .docx), then ask questions and get instant, context-aware answers.</p>
         <div class="hint">💡 Try: "What is your refund policy?"</div>
       </div>
     </div>
@@ -677,7 +677,7 @@
     chatWindow.innerHTML = `
       <div class="welcome" id="welcome">
         <h2>Ask Me Anything</h2>
-        <p>Your AI-powered support assistant. Upload your FAQ documents on the left, then ask questions and get instant, context-aware answers.</p>
+        <p>Your AI-powered support assistant. Upload your documents on the left (.txt, .pdf, .doc, .docx), then ask questions and get instant, context-aware answers.</p>
         <div class="hint">💡 Try: "What is your refund policy?"</div>
       </div>`;
   });

@@ -114,8 +114,8 @@ class GraphRAG:
             if extracted:
                 answer = extracted
         
-        # If still no good answer, try formatting chunks
-        if not answer or len(answer) < 20:
+        # If still no good answer, try formatting chunks (covers all failure cases)
+        if not answer or len(answer) < 20 or (answer_is_gibberish and not extracted):
             formatted = AnswerExtractor.format_chunks_response(state["retrieved_docs"])
             if formatted:
                 answer = formatted
@@ -238,8 +238,8 @@ Answer:"""
             if extracted:
                 answer = extracted
         
-        # If still no good answer, format chunks
-        if not answer or len(answer) < 20:
+        # If still no good answer, format chunks (covers all failure cases)
+        if not answer or len(answer) < 20 or (not extracted and self._is_gibberish_answer(answer, expanded_context)):
             formatted = AnswerExtractor.format_chunks_response(state["retrieved_docs"])
             if formatted:
                 answer = formatted

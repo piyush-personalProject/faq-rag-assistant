@@ -117,8 +117,8 @@ class RAGEngine:
         for file_path in files:
             documents = self._load_document(file_path)
             if documents:
-                chunked = self._chunk_text(documents[0].page_content, file_path.name)
-                all_documents.extend(chunked)
+                # _load_document already returns properly chunked documents
+                all_documents.extend(documents)
         
         if not all_documents:
             return {"status": "error", "message": "No content could be extracted from files."}

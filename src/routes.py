@@ -40,18 +40,19 @@ def ingest_folder():
 
 @api.route("/upload", methods=["POST"])
 def upload_file():
-    """Upload one or more .txt files and ingest them immediately."""
+    """Upload one or more .txt, .pdf, .doc, or .docx files and ingest them immediately."""
     if "files" not in request.files:
         return jsonify({"status": "error", "message": "No files part in request."}), 400
     
     files = request.files.getlist("files")
     results = []
+    supported = [".txt", ".pdf", ".doc", ".docx"]
     
     for f in files:
         if f.filename == "":
             continue
-        if not f.filename.endswith(".txt"):
-            results.append({"file": f.filename, "status": "skipped", "reason": "not a .txt file"})
+        if not any(f.filename.lower().endswith(ext) for ext in supported):
+            results.append({"file": f.filename, "status": "skipped", "reason": f"Unsupported format. Supported: {', '.join(supported)}"})
             continue
         
         filename = secure_filename(f.filename)
