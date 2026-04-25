@@ -23,10 +23,29 @@ class Config:
     TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", 5))
     EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
     
+    # Semantic chunking settings
+    USE_SEMANTIC_CHUNKING = os.getenv("USE_SEMANTIC_CHUNKING", "False").lower() == "true"
+    SEMANTIC_SIMILARITY_THRESHOLD = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", 0.5))
+    
+    # Hybrid search and reranking settings
+    USE_HYBRID_SEARCH = os.getenv("USE_HYBRID_SEARCH", "True").lower() == "true"
+    BM25_WEIGHT = float(os.getenv("BM25_WEIGHT", 0.3))
+    SEMANTIC_WEIGHT = float(os.getenv("SEMANTIC_WEIGHT", 0.7))
+    USE_RERANKING = os.getenv("USE_RERANKING", "True").lower() == "true"
+    RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-base")
+    RERANK_TOP_K = int(os.getenv("RERANK_TOP_K", 10))
+    
     # LLM settings
     LLM_MODEL = os.getenv("LLM_MODEL", "gpt2-medium")
     LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", 150))
     LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.3))
+    
+    # LangSmith tracing (optional)
+    LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
+    LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "knowledgeStore")
+    
+    # Tracing settings
+    ENABLE_TRACING = os.getenv("ENABLE_TRACING", "True").lower() == "true"
     
     # Paths
     PROJECT_ROOT = Path(__file__).parent.parent

@@ -102,8 +102,10 @@ def chat():
     is_simple, simple_response = QueryClassifier.is_simple_query(user_message)
     
     if is_simple:
+        print("[Routes] Simple query detected - skipping RAG tracing")
         sources = []
     else:
+        print("[Routes] Complex query - using GraphRAG with tracing")
         # Use the self-correcting graph for complex queries (with history)
         graph_rag = get_graph_rag()
         

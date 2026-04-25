@@ -11,6 +11,9 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+*.egg-info/
+dist/
+build/
 
 # IDE
 .idea/
@@ -27,3 +30,17 @@ files.zip
 # OS
 .DS_Store
 Thumbs.db
+test_graph2.py
+docs/BLOG_ARTICLE.md
+docs/EXECUTIVE_SUMMARY.md
+
+# GitHub
+.github/
+
+# Coverage
+cov.xml
+*.cover
+
+# Virtual environment (backup locations)
+venv/
+env/

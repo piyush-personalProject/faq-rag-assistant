@@ -4,6 +4,7 @@ Provides quality checks and regeneration for more accurate answers.
 """
 
 import re
+import time
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -11,6 +12,8 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from .rag_engine import RAGEngine
 from .llm import LLMManager
 from .answer_extractor import AnswerExtractor
+from .rag_evaluator import RAGEvaluator
+from .rag_trace import RAGTracer, get_tracer
 
 
 class RAGState(TypedDict):
@@ -32,9 +35,11 @@ class GraphRAG:
     Flow: Retrieve → Generate → Quality Check → (Regenerate if poor) → Done
     """
     
-    def __init__(self, rag_engine: RAGEngine, llm_manager: LLMManager):
+    def __init__(self, rag_engine: RAGEngine, llm_manager: LLMManager, enable_tracing: bool = True):
         self.rag = rag_engine
         self.llm = llm_manager
+        self.evaluator = RAGEvaluator()
+        self.tracer = get_tracer() if enable_tracing else None
         self.graph = self._build_graph()
     
     def _build_graph(self):
@@ -74,6 +79,22 @@ class GraphRAG:
     def _retrieve_node(self, state: RAGState) -> RAGState:
         """Retrieve relevant documents based on query."""
         docs = self.rag.retrieve(state["query"], top_k=5)
+        
+        print(f"[GraphRAG] Retrieved {len(docs)} documents for query: {state['query'][:50]}...")
+        
+        # Record chunks in trace if tracing is enabled
+        if self.tracer and self.tracer._current_trace:
+            for i, doc in enumerate(docs):
+                self.tracer.add_chunk(
+                    chunk_id=f"chunk_{i}",
+                    source=doc.get("source", "unknown"),
+                    text=doc.get("text", ""),
+                    score=doc.get("score", 0.0),
+                    used=False,
+                    token_overlap=0.0
+                )
+        elif self.tracer:
+            print(f"[GraphRAG] No active trace to add chunks to")
         
         return {
             **state,
@@ -177,30 +198,35 @@ class GraphRAG:
         return "\n".join(formatted)
     
     def _quality_check_node(self, state: RAGState) -> RAGState:
-        """Evaluate if the generated answer meets quality threshold using heuristic."""
-        # Simple heuristic-based quality check (no LLM call needed)
+        """
+        Evaluate the generated answer using proper RAG metrics:
+        faithfulness, answer_relevance, and context_precision.
+        
+        Uses the RAGEvaluator for comprehensive quality assessment.
+        """
         answer = state.get("answer", "")
-        context = state.get("context", "")
-        
+        query = state.get("query", "")
+        retrieved_docs = state.get("retrieved_docs", [])
+
         if not answer or len(answer) < 20:
+            # Use heuristic score for very short answers
             score = 0.3
+            evaluation = None
         else:
-            # Check overlap between answer and context words
-            context_words = set(re.findall(r'\b\w{4,}\b', context.lower()))
-            answer_words = set(re.findall(r'\b\w{4,}\b', answer.lower()))
-            stop_words = {'what', 'your', 'have', 'from', 'this', 'with', 'will', 'been', 'they', 'their', 'there', 'when', 'where', 'which', 'about', 'some', 'would', 'could', 'should', 'into', 'only', 'other', 'then', 'than', 'very', 'also', 'after', 'before', 'such', 'each', 'more', 'most', 'some', 'these', 'those'}
-            context_words -= stop_words
-            answer_words -= stop_words
+            # Run full evaluation using RAGEvaluator
+            evaluation = self.evaluator.evaluate(answer, query, retrieved_docs)
             
-            overlap = context_words & answer_words
+            # Get overall quality from weighted metrics
+            score = self.evaluator.get_overall_quality(evaluation)
             
-            # Good overlap means answer is relevant to context
-            if len(context_words) > 0:
-                overlap_ratio = len(overlap) / len(context_words)
-                score = min(0.9, overlap_ratio + 0.3)  # Scale: 0.3 to 0.9 based on overlap
-            else:
-                score = 0.5
-        
+            # Log detailed metrics for debugging
+            if evaluation:
+                state["messages"] = state["messages"] + [
+                    f"Faithfulness: {evaluation.faithfulness:.2f}",
+                    f"Answer Relevance: {evaluation.answer_relevance:.2f}",
+                    f"Context Precision: {evaluation.context_precision:.2f}"
+                ]
+
         return {
             **state,
             "quality_score": score,
@@ -269,11 +295,21 @@ Answer:"""
             history: Optional conversation history (list of BaseMessage objects)
             
         Returns:
-            dict with 'answer', 'quality_score', 'attempts', 'sources'
+            dict with 'answer', 'quality_score', 'attempts', 'sources', 'trace_id'
         """
         # Convert list of dicts to BaseMessage objects if needed
         if history is None:
             history = []
+        
+        # Start trace if tracing is enabled
+        trace_id = None
+        start_time = None
+        if self.tracer:
+            print(f"[GraphRAG] Starting trace for query: {user_query[:50]}...")
+            trace_id = self.tracer.start_trace(user_query)
+            start_time = time.time()
+        else:
+            print(f"[GraphRAG] Tracing is disabled")
         
         initial_state = {
             "query": user_query,
@@ -291,13 +327,31 @@ Answer:"""
         # Extract sources from retrieved docs
         sources = list({d["source"] for d in result["retrieved_docs"]}) if result["retrieved_docs"] else []
         
-        return {
+        # Mark retrieved chunks as used (we use all retrieved chunks in generation)
+        if self.tracer and result["retrieved_docs"]:
+            chunk_ids = [f"chunk_{i}" for i in range(len(result["retrieved_docs"]))]
+            self.tracer.mark_chunks_used(chunk_ids)
+        
+        response = {
             "answer": result["answer"],
             "quality_score": result["quality_score"],
             "attempts": result["attempts"] + 1,  # +1 because first attempt doesn't count as attempt
             "sources": sources,
             "retrieved_docs": result["retrieved_docs"]
         }
+        
+        # Finalize trace if tracing is enabled
+        if self.tracer and self.tracer._current_trace:
+            self.tracer.set_answer(result["answer"])
+            self.tracer.set_evaluation({
+                "quality_score": result["quality_score"]
+            })
+            if start_time:
+                self.tracer.set_generation_time((time.time() - start_time) * 1000)
+            trace = self.tracer.end_trace()
+            response["trace_id"] = trace.trace_id if trace else None
+        
+        return response
 
 
 # Singleton instance (lazy initialization)
