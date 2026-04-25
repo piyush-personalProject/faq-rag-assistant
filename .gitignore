@@ -30,9 +30,6 @@ files.zip
 # OS
 .DS_Store
 Thumbs.db
-test_graph2.py
-docs/BLOG_ARTICLE.md
-docs/EXECUTIVE_SUMMARY.md
 
 # GitHub
 .github/

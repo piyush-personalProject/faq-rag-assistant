@@ -559,7 +559,14 @@ class RAGEngine:
         if results and config.USE_RERANKING:
             results = self._rerank_results(query, results)
         
-        return results[:top_k]
+        # Filter out placeholder chunks that may contaminate results
+        filtered_results = [
+            r for r in results 
+            if r.get("source", "unknown") not in ("placeholder", "init", "unknown")
+        ]
+        
+        # If filtering removed all results, return original (fallback)
+        return filtered_results[:top_k] if filtered_results else results[:top_k]
     
     def get_status(self) -> Dict:
         """Return index status information."""

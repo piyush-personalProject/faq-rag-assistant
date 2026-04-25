@@ -317,6 +317,80 @@ def _format_history(self, history: List[BaseMessage]) -> str:
 - `graph_rag.py`: Passes history through RAGState; formats for LLM prompts
 - `llm.py`: Includes history context in `generate_with_context()`
 
+### 8. Document-to-Answer Lineage Tracing (rag_trace.py)
+
+**Technology:** File-based JSON storage with optional LangSmith cloud integration
+
+**Purpose:** Tracks which documents/chunks contributed to each answer for:
+- Audit compliance (explain "why" the system answered a certain way)
+- Debugging retrieval issues (see which chunks were retrieved but not used)
+- Performance monitoring (latency and quality metrics per query)
+- Quality assurance (verify LLM responses match retrieved context)
+
+**Architecture:**
+```
+Query → GraphRAG.query()
+           │
+           ▼
+    [RAGTracer.start_trace()] → Creates GenerationTrace
+           │
+           ▼
+    [Chunks Retrieved] → RAGTracer.add_chunk() records each chunk
+           │
+           ▼
+    [Answer Generated] → RAGTracer.set_answer()
+           │
+           ▼
+    [Quality Check] → RAGTracer.set_evaluation(metrics)
+           │
+           ▼
+    [RAGTracer.end_trace()] → Saves JSON to embeddings/traces/
+```
+
+**Data Captured Per Query:**
+```python
+{
+    "trace_id": "rag_1234567890",
+    "timestamp": "2026-04-24T23:14:26.080630",
+    "query": "What is your refund policy?",
+    "answer": "We offer a 30-day return policy...",
+    "chunks": [
+        {"chunk_id": "chunk_0", "source": "returns.txt", "score": 0.995, "used_in_generation": true},
+        ...
+    ],
+    "evaluation_metrics": {"quality_score": 0.714},
+    "generation_time_ms": 10146.55,
+    "llm_model": "gpt2-medium"
+}
+```
+
+**Key Classes:**
+- [`RAGTracer`](src/rag_trace.py:62) - Main tracing class with start/end trace methods
+- [`GenerationTrace`](src/rag_trace.py:28) - Dataclass holding complete trace data
+- [`ChunkContribution`](src/rag_trace.py:17) - Individual chunk attribution
+
+**Key Methods:**
+| Method | Purpose |
+|--------|---------|
+| `start_trace(query)` | Begin new trace for a query |
+| `add_chunk(chunk_id, source, text, score)` | Record chunk contribution |
+| `mark_chunks_used(chunk_ids)` | Mark chunks used in generation |
+| `set_answer(answer)` | Record final answer |
+| `set_evaluation(metrics)` | Record quality metrics |
+| `end_trace()` | Finalize and save trace |
+| `get_recent_traces(limit)` | Get last N traces |
+| `get_traces_by_source(source)` | Find traces using specific document |
+| `get_trace_summary()` | Aggregate statistics across all traces |
+
+**Configuration:**
+```env
+ENABLE_TRACING=True           # Enable/disable tracing (default: True)
+LANGSMITH_API_KEY=            # Optional: enable cloud tracing
+LANGSMITH_PROJECT=knowledgeStore
+```
+
+**Storage Location:** `embeddings/traces/rag_<timestamp>.json`
+
 ---
 
 ## Data Flow Example
